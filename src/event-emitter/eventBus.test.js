@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { EventBus } from "./evenBus";
+import { EventBus } from "./eventBus";
 
 describe("EventBus", () => {
   it("creates an empty map", () => {
@@ -58,7 +58,7 @@ describe("EventBus", () => {
     bus.emit("login", { name: "Mukul" });
 
     expect(first).not.toHaveBeenCalled();
-    expect(second).toHaveResolvedTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
   });
 
   it("does nothing when removing unknown callback", () => {
@@ -72,7 +72,7 @@ describe("EventBus", () => {
 
     bus.emit("login");
 
-    expect(first).toHaveResolvedTimes(1);
+    expect(first).toHaveBeenCalledTimes(1);
   });
 
   it("does nothing for unknown events (not subscribed)", () => {

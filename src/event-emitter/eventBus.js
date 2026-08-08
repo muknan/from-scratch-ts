@@ -8,6 +8,10 @@ export class EventBus {
       this.events.set(event, []);
     }
     this.events.get(event).push(callback);
+
+    return () => {
+      this.#unsubscribe(event, callback);
+    };
   }
 
   emit(event, data) {
@@ -19,10 +23,10 @@ export class EventBus {
     }
   }
 
-  unsubscribe(event, cb) {
+  #unsubscribe(event, callback) {
     if (!this.events.has(event)) return;
 
-    const updated = this.events.get(event).filter((fn) => fn !== cb);
+    const updated = this.events.get(event).filter((fn) => fn !== callback);
 
     if (updated.length === 0) this.events.delete(event);
     else this.events.set(event, updated);
@@ -49,3 +53,5 @@ bus.unsubscribe("login", fn2);
 console.log(bus);
 
 bus.emit("login", { name: "Mukul" });
+
+export default new EventBus();
