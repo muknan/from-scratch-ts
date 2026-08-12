@@ -90,6 +90,8 @@ describe("Testing Task Queue", () => {
     queue.enqueue(taskA);
     queue.enqueue(taskB);
 
+    await Promise.resolve();
+
     expect(running).toBe(2);
 
     resolveA();
@@ -98,7 +100,7 @@ describe("Testing Task Queue", () => {
     expect(running).toBe(0);
   });
 
-  it("queue task when concurrency is full", () => {
+  it("queue task when concurrency is full", async () => {
     const queue = new TaskQueue({ concurrency: 2 });
     let running = 0;
 
@@ -107,7 +109,6 @@ describe("Testing Task Queue", () => {
     const createTask = (setResolver) => {
       return () => {
         running++;
-
         return new Promise((resolve) => {
           setResolver(() => {
             running--;
@@ -125,9 +126,8 @@ describe("Testing Task Queue", () => {
     queue.enqueue(taskB);
     queue.enqueue(taskC);
 
+    await Promise.resolve();
     expect(running).toBe(2);
-
-    resolveA();
   });
 
   it("start next queued task when slot is available", async () => {
@@ -163,6 +163,7 @@ describe("Testing Task Queue", () => {
     queue.enqueue(taskB);
     queue.enqueue(taskC);
 
+    await Promise.resolve();
     expect(started).toEqual(["A", "B"]);
 
     resolveA();
@@ -172,5 +173,99 @@ describe("Testing Task Queue", () => {
     });
 
     expect(running).toBe(2);
+  });
+
+  it("task must wait after a fail before retrying", async () => {
+    vi.useFakeTimers();
+    const queue = new TaskQueue({ concurrency: 1 });
+    let attempts = 0;
+
+    const task = () => {
+      attempts++;
+
+      if (attempts === 1) {
+        throw new Error("fail");
+      }
+
+      return "success";
+    };
+
+    const promise = queue.enqueue(task, { maxRetries: 1, baseDelay: 100 });
+
+    // Let initial task execute and fail
+    await Promise.resolve();
+
+    expect(attempts).toBe(1);
+
+    // 99ms isn't enough
+    await vi.advanceTimersByTimeAsync(99);
+
+    expect(attempts).toBe(1);
+
+    // Now the full 100ms has elapsed
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(attempts).toBe(2);
+
+    const result = await promise;
+
+    expect(result).toBe("success");
+
+    vi.useRealTimers();
+  });
+
+  it("task is exponentially delayed after each failure", async () => {
+    vi.useFakeTimers();
+    const queue = new TaskQueue({ concurrency: 1 });
+    let attempts = 0;
+
+    const task = () => {
+      attempts++;
+
+      if (attempts === 1 || attempts === 2) {
+        throw new Error("fail");
+      }
+
+      return "success";
+    };
+
+    const promise = queue.enqueue(task, { maxRetries: 2, baseDelay: 100 });
+
+    await Promise.resolve();
+    expect(attempts).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(99);
+    expect(attempts).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(attempts).toBe(2);
+
+    await vi.advanceTimersByTimeAsync(199);
+    expect(attempts).toBe(2);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(attempts).toBe(3);
+
+    const res = await promise;
+    expect(res).toBe("success");
+
+    vi.useRealTimers();
+  });
+
+  it("failed tasks are added to deadletters", async () => {
+    const queue = new TaskQueue({ concurrency: 1 });
+    let attempts = 0;
+
+    const task = () => {
+      attempts++;
+
+      throw new Error("fail");
+    };
+
+    const promise = queue.enqueue(task, { maxRetries: 1, baseDelay: 0 });
+
+    await expect(promise).rejects.toThrow("fail");
+
+    expect(queue.deadLetters.length).toBe(1);
   });
 });
